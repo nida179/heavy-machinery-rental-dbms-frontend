@@ -1,3 +1,8 @@
+import { Barlow, Barlow_Condensed} from "next/font/google";
+
+const body = Barlow({ subsets: ["latin"],weight: ["400","500","600"], variable: "--font-body"});
+const display = Barlow_Condensed({subsets: ["latin"],weight: ["600","700"], variable: "--font-display"});
+
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -23,7 +28,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className={`${body.variable} ${display.variable}`}></body>
     </html>
   );
 }
