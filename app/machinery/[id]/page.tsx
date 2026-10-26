@@ -1,84 +1,171 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useEffect, useState, use } from 'react';
 
-type Machinery = {
-  machine_id: number;
+interface Machine {
+  id: number;
   name: string;
-  category_name: string;
-  description?: string;
-  rate_hourly: string;
-  rate_daily: string;
+  category: number | { name: string } | string;
+  category_name?: string;
+  hourly_rate?: string;
+  daily_rate?: string;
+  hourlyRate?: string;
+  dailyRate?: string;
   status: string;
-};
+}
 
-export default function MachineryDetail() {
-  const params = useParams();
-  const { id } = params;
+export default function MachineryDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  // Unwrap params using React.use() for Next.js App Router compatibility
+  const resolvedParams = use(params);
+  const id = resolvedParams.id;
 
-  const [machine, setMachine] = useState<Machinery | null>(null);
+  const [machine, setMachine] = useState<Machine | null>(null);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [bookingLoading, setBookingLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`http://127.0.0.1:8000/api/machinery/${id}/`)
-      .then((res) => {
-        if (!res.ok) throw new Error('Machine not found');
-        return res.json();
-      })
-      .then((data) => {
+    async function fetchMachine() {
+      if (!id) return;
+      try {
+        // Try fetching individual machine details
+        let res = await fetch(`http://127.0.0.1:8000/api/machinery/${id}/`);
+        
+        // Fallback: if single detail endpoint isn't supported, fetch list and find by ID
+        if (!res.ok) {
+          const listRes = await fetch('http://127.0.0.1:8000/api/machinery/');
+          if (!listRes.ok) throw new Error('Machine details could not be retrieved');
+          const listData = await listRes.json();
+          const found = listData.find((m: Machine) => String(m.id) === String(id));
+          if (!found) throw new Error('Machine not found');
+          setMachine(found);
+          return;
+        }
+
+        const data = await res.json();
         setMachine(data);
-        setLoading(false);
-      })
-      .catch((err) => {
+      } catch (err: any) {
         setError(err.message);
+      } finally {
         setLoading(false);
-      });
+      }
+    }
+    fetchMachine();
   }, [id]);
 
-  if (loading) return <main style={{ padding: 40 }}>Loading...</main>;
-  if (error || !machine) return <main style={{ padding: 40, color: 'red' }}>Error: {error}</main>;
+  const handleBooking = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+    setBookingLoading(true);
+
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/bookings/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(localStorage.getItem('token') && {
+            Authorization: `Bearer ${localStorage.getItem('token')}`,
+          }),
+        },
+        body: JSON.stringify({
+          machinery: id,
+          start_date: startDate,
+          end_date: endDate,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.detail || data.non_field_errors?.[0] || 'Booking conflict or invalid dates');
+      }
+
+      setSuccess('Booking request submitted successfully!');
+      setStartDate('');
+      setEndDate('');
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setBookingLoading(false);
+    }
+  };
+
+  if (loading) return <div className="p-8 text-center text-[var(--color-steel)]">Loading machine details...</div>;
+  if (error || !machine) return <div className="p-8 text-center text-red-500">{error || 'Machine not found.'}</div>;
+
+  const hRate = machine.hourly_rate || machine.hourlyRate || '85.00';
+  const dRate = machine.daily_rate || machine.dailyRate || '600.00';
 
   return (
-    <main style={{ padding: 40, fontFamily: 'sans-serif', maxWidth: 600 }}>
-      <a href="/" style={{ color: '#2563eb', textDecoration: 'none' }}>&larr; Back to all machinery</a>
-      <h1 style={{ fontSize: 28, margin: '16px 0 8px' }}>{machine.name}</h1>
-      <p style={{ color: '#666', marginBottom: 16 }}>{machine.category_name}</p>
-      {machine.description && (
-        <p style={{ marginBottom: 16, lineHeight: 1.6 }}>{machine.description}</p>
-      )}
-      <p style={{ fontSize: 18, marginBottom: 8 }}>
-        Rs {machine.rate_hourly}/hr &middot; Rs {machine.rate_daily}/day
-      </p>
-      <span
-        style={{
-          display: 'inline-block',
-          marginBottom: 24,
-          padding: '4px 10px',
-          borderRadius: 12,
-          fontSize: 13,
-          background: machine.status === 'Available' ? '#d1fae5' : '#fee2e2',
-          color: machine.status === 'Available' ? '#065f46' : '#991b1b',
-        }}
-      >
-        {machine.status}
-      </span>
-      <div>
-        <button
-          style={{
-            padding: '10px 24px',
-            background: '#2563eb',
-            color: 'white',
-            border: 'none',
-            borderRadius: 6,
-            fontSize: 16,
-            cursor: 'pointer',
-          }}
-        >
-          Book Now
-        </button>
+    <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8 py-6">
+      {/* Machine Info */}
+      <div className="p-6 border border-neutral-200 rounded-2xl bg-white shadow-sm space-y-4">
+        <span className="text-xs font-bold uppercase tracking-wider px-3 py-1 bg-emerald-100 text-emerald-800 rounded">
+          {machine.status}
+        </span>
+        <h1 className="font-display text-3xl font-bold text-neutral-900">{machine.name}</h1>
+        <p className="text-lg font-semibold text-neutral-800">
+          Rs {hRate}/hr · Rs {dRate}/day
+        </p>
       </div>
-    </main>
+
+      {/* Booking Form */}
+      <div className="p-6 border border-neutral-200 rounded-2xl bg-white shadow-sm space-y-6">
+        <h2 className="font-display text-xl font-bold text-neutral-900">Book Machinery</h2>
+
+        {error && (
+          <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">
+            ⚠️ {error}
+          </div>
+        )}
+
+        {success && (
+          <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-lg">
+            ✅ {success}
+          </div>
+        )}
+
+        <form onSubmit={handleBooking} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-[var(--color-steel)] mb-1">
+              Start Date
+            </label>
+            <input
+              type="date"
+              required
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full px-3 py-2 border border-[var(--color-steel)]/40 rounded-lg text-sm text-neutral-800 focus:outline-none focus:ring-2 focus:ring-[var(--color-yellow)]"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-[var(--color-steel)] mb-1">
+              End Date
+            </label>
+            <input
+              type="date"
+              required
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-full px-3 py-2 border border-[var(--color-steel)]/40 rounded-lg text-sm text-neutral-800 focus:outline-none focus:ring-2 focus:ring-[var(--color-yellow)]"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={bookingLoading || machine.status !== 'Available'}
+            className="w-full py-3 px-4 font-bold uppercase tracking-wider text-sm rounded-lg transition-opacity hover:opacity-90 disabled:opacity-50"
+            style={{ backgroundColor: 'var(--color-yellow)', color: '#111' }}
+          >
+            {bookingLoading ? 'Submitting...' : 'Confirm Booking Request'}
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }
